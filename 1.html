@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>烏龜大冒險：無盡混亂</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Arial', sans-serif; }
+        #game-box { position: relative; width: 100vw; height: 100vh; background: #1a1a1a; overflow: hidden; transition: background 1s; }
+        
+        .ocean-mode { background: linear-gradient(to bottom, #001a33, #000) !important; }
+        #fog { position: absolute; inset: 0; pointer-events: none; z-index: 150; transition: 0.5s; background: radial-gradient(circle, transparent 20%, rgba(0,0,0,0.9) 80%); display: none; }
+        
+        #ui { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-around; color: white; font-size: 24px; z-index: 100; font-weight: bold; text-shadow: 2px 2px #000; }
+        #status-msg { position: absolute; top: 80px; width: 100%; text-align: center; color: #ffeb3b; font-size: 30px; font-weight: bold; z-index: 100; }
+
+        .entity { position: absolute; display: flex; justify-content: center; align-items: center; user-select: none; }
+        #player { font-size: 70px; z-index: 50; transition: filter 0.2s; }
+        #shark { font-size: 160px; z-index: 40; filter: drop-shadow(0 0 20px red); transition: left 0.2s; }
+        #ground { position: absolute; bottom: 0; width: 100%; height: 90px; background: #222; border-top: 4px solid #444; z-index: 10; }
+
+        #menu { position: absolute; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 500; color: white; }
+        .char-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px; }
+        .char-item { padding: 15px; border: 2px solid #444; cursor: pointer; text-align: center; border-radius: 10px; transition: 0.3s; }
+        .selected { border-color: #ffeb3b; background: #333; transform: scale(1.1); }
+        
+        #skill-desc-box { padding: 15px; border: 1px solid #ffeb3b; width: 80%; text-align: center; color: #ccc; background: rgba(255,255,255,0.05); }
+        button#start-btn { margin-top: 25px; padding: 15px 50px; font-size: 22px; background: #ffeb3b; border: none; cursor: pointer; font-weight: bold; border-radius: 10px; }
+        
+        .invert { filter: invert(1) hue-rotate(180deg); }
+    </style>
+</head>
+<body>
+
+    <div id="game-box">
+        <div id="fog"></div>
+        <div id="ui">
+            <div id="hp-box">❤️❤️❤️</div>
+            <div>目前里程: <span id="dist">0</span> m</div>
+            <div id="star-ui" style="color: #ffeb3b;">⭐ 收集: <span id="star-count">0</span> / 30</div>
+        </div>
+        <div id="status-msg"></div>
+
+        <div id="player" class="entity">🐢</div>
+        <div id="shark" class="entity">🦈</div>
+        <div id="ground"></div>
+
+        <div id="menu">
+            <h1 style="color: #ffeb3b;">英雄無盡生存戰</h1>
+            <div class="char-grid">
+                <div class="char-item selected" onclick="selectChar('🐢','烏龜','縮殼防禦：蹲下時上方無敵', this)">🐢<br>烏龜</div>
+                <div class="char-item" onclick="selectChar('🐕','狗狗','磁力嗅覺：自動吸引星星', this)">🐕<br>狗狗</div>
+                <div class="char-item" onclick="selectChar('🐁','老鼠','極小體積：最難被撞到', this)">🐁<br>老鼠</div>
+                <div class="char-item" onclick="selectChar('🐇','兔子','三連跳躍：飛越一切障礙', this)">🐇<br>兔子</div>
+                <div class="char-item" onclick="selectChar('🦔','刺蝟','反擊尖刺：撞擊機率不扣血', this)">🦔<br>刺蝟</div>
+                <div class="char-item" onclick="selectChar('🦘','袋鼠','強力噴射：跳得比誰都高', this)">🦘<br>袋鼠</div>
+            </div>
+            <div id="skill-desc-box">縮殼防禦：蹲下時上方無敵</div>
+            <button id="start-btn" onclick="startGame()">點擊開始 (含音效)</button>
+        </div>
+    </div>
+
+<script>
+let audioCtx;
+const gameBox = document.getElementById('game-box');
+const playerEl = document.getElementById('player');
+const sharkEl = document.getElementById('shark');
+const statusMsg = document.getElementById('status-msg');
+const fog = document.getElementById('fog');
+
+let isPlaying = false, score = 0, stars = 0, hp = 3;
+let sharkX = -500, sharkGoal = -500;
+let player = { char: '🐢', y: 0, vy: 0, jumps: 0, crouch: false, reversed: false };
+let items = [];
+
+// 音效系統
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(freq, type, duration, vol=0.1) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function selectChar(c, name, desc, el) {
+    player.char = c; playerEl.innerText = c;
+    document.getElementById('skill-desc-box').innerText = desc;
+    document.querySelectorAll('.char-item').forEach(i => i.classList.remove('selected'));
+    el.classList.add('selected');
+    playerEl.style.fontSize = (c === '🐁') ? '45px' : '75px';
+}
+
+function startGame() {
+    initAudio();
+    audioCtx.resume();
+    document.getElementById('menu').style.display = 'none';
+    score = 0; stars = 0; hp = 3; sharkGoal = -500;
+    isPlaying = true;
+    player.y = window.innerHeight - 160;
+    items.forEach(i => i.el.remove()); items = [];
+    requestAnimationFrame(loop);
+    spawnManager();
+    maliceManager();
+    playSound(440, 'sine', 0.5); // 開始音
+}
+
+function spawnManager() {
+    if(!isPlaying) return;
+    let type = Math.random();
+    let x = window.innerWidth + 200;
+    
+    if(type < 0.4) { // 星星群
+        for(let i=0; i<5; i++) createItem('⭐', 'star', x + (i*60), window.innerHeight - 300 - Math.random()*150);
+    } else if(type < 0.5) { // 惡意方塊
+        createItem('👾', 'glitch', x, window.innerHeight - 165);
+    } else { // 密集障礙物
+        let isHigh = Math.random() > 0.5;
+        let icon = isHigh ? '🦅' : '🌲';
+        if(score > 5000) icon = isHigh ? '🐙' : '⚓';
+        createItem(icon, isHigh?'high':'low', x, isHigh?window.innerHeight-280:window.innerHeight-165);
+    }
+    setTimeout(spawnManager, 1200 - Math.min(score/50, 800));
+}
+
+function maliceManager() {
+    if(!isPlaying) return;
+    let r = Math.random();
+    if(r < 0.3) {
+        statusMsg.innerText = "🌫️ 濃霧來襲！";
+        fog.style.display = 'block';
+        playSound(150, 'sawtooth', 0.5, 0.05);
+        setTimeout(() => { fog.style.display = 'none'; statusMsg.innerText = ""; }, 5000);
+    } else if(r < 0.5) {
+        statusMsg.innerText = "🌈 視覺污染！";
+        gameBox.classList.add('invert');
+        setTimeout(() => { gameBox.classList.remove('invert'); statusMsg.innerText = ""; }, 4000);
+    }
+    setTimeout(maliceManager, 8000 + Math.random()*7000);
+}
+
+function createItem(txt, kind, x, y) {
+    let el = document.createElement('div');
+    el.className = 'entity'; el.innerText = txt;
+    el.style.fontSize = kind==='star'?'40px':'80px';
+    el.style.left = x + 'px'; el.style.top = y + 'px';
+    gameBox.appendChild(el);
+    items.push({ el, x, y, kind, hit: false });
+}
+
+function loop() {
+    if(!isPlaying) return;
+    score += 1; // 里程穩定跳動
+    document.getElementById('dist').innerText = Math.floor(score);
+    document.getElementById('star-count').innerText = stars;
+
+    if(score > 5000) gameBox.classList.add('ocean-mode');
+
+    // 物理與特技
+    let floor = window.innerHeight - 160;
+    if(!player.crouch) { player.vy += 2.2; player.y += player.vy; }
+    if(player.y >= floor) { player.y = floor; player.vy = 0; player.jumps = 0; }
+    playerEl.style.top = player.y + 'px'; playerEl.style.left = '250px';
+
+    // 鯊魚邏輯
+    sharkGoal -= 0.5; if(sharkGoal < -500) sharkGoal = -500;
+    sharkX += (sharkGoal - sharkX) * 0.1;
+    sharkEl.style.left = sharkX + 'px'; sharkEl.style.top = window.innerHeight - 400 + 'px';
+
+    for(let i=items.length-1; i>=0; i--) {
+        let it = items[i];
+        it.x -= (16 + score/1000);
+        
+        // 🐕 狗狗吸星
+        if(player.char === '🐕' && it.kind === 'star') {
+            let dx = 250 - it.x, dy = player.y - it.y;
+            if(Math.abs(dx) < 350) { it.x += dx * 0.1; it.y += dy * 0.1; it.el.style.top = it.y + 'px'; }
+        }
+
+        it.el.style.left = it.x + 'px';
+        let radius = (player.char === '🐁') ? 45 : 70;
+
+        if(Math.abs(250 - it.x) < radius && Math.abs(player.y - it.y) < radius && !it.hit) {
+            if(it.kind === 'star') {
+                stars++; it.el.remove(); items.splice(i, 1);
+                playSound(1200, 'sine', 0.1, 0.1);
+                if(stars >= 30) { statusMsg.innerText = "✨ 門戶已開啟！衝過萬米過關！"; }
+            } else if(it.kind === 'glitch') {
+                player.reversed = true; it.el.remove(); items.splice(i, 1);
+                statusMsg.innerText = "🌀 操作混亂！";
+                playSound(200, 'square', 0.5, 0.2);
+                setTimeout(() => { player.reversed = false; statusMsg.innerText = ""; }, 5000);
+            } else {
+                let hit = (it.kind==='high' && !player.crouch) || (it.kind==='low' && player.y > floor - 30);
+                if(player.char === '🐢' && player.crouch && it.kind === 'high') hit = false;
+                
+                if(hit) {
+                    if(player.char === '🦔' && Math.random() < 0.3) {
+                        it.el.remove(); items.splice(i, 1); continue;
+                    }
+                    it.hit = true; hp--;
+                    document.getElementById('hp-box').innerText = "❤️".repeat(hp);
+                    sharkGoal += 300;
+                    playSound(80, 'sawtooth', 0.4, 0.3);
+                    if(hp <= 0) endGame("你被鯊魚抓住了！");
+                }
+            }
+        }
+        if(it.x < -100) { it.el.remove(); items.splice(i, 1); }
+    }
+
+    if(sharkX + 320 > 250) endGame("鯊魚咬到了你！");
+    if(stars >= 30 && score > 10000) endGame("🏆 逃出生天！過關！", true);
+    if(isPlaying) requestAnimationFrame(loop);
+}
+
+function endGame(m, win=false) {
+    isPlaying = false;
+    alert(m + "\n星星總數: " + stars + "\n里程: " + Math.floor(score));
+    location.reload();
+}
+
+window.onkeydown = (e) => {
+    let key = e.code;
+    if(player.reversed) {
+        if(key === 'Space') key = 'ArrowDown';
+        else if(key === 'ArrowDown') key = 'Space';
+    }
+
+    if(key === 'Space') {
+        let max = (player.char === '🐇') ? 3 : 1;
+        if(player.jumps < max) {
+            player.vy = (player.char === '🦘') ? -42 : -36;
+            player.jumps++;
+            playSound(300 + player.jumps * 100, 'triangle', 0.15);
+        }
+    }
+    if(key === 'ArrowDown') {
+        player.crouch = true;
+        playerEl.style.transform = 'scaleY(0.4) translateY(60px)';
+    }
+};
+window.onkeyup = (e) => {
+    if(e.code === 'ArrowDown' || (player.reversed && e.code === 'Space')) {
+        player.crouch = false;
+        playerEl.style.transform = 'scaleY(1) translateY(0px)';
+    }
+};
+</script>
+</body>
+</html>
