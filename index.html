@@ -2,258 +2,348 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <title>烏龜大冒險：無盡混亂</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Killer Fish 2 - Global Ranking</title>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
+    
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Arial', sans-serif; }
-        #game-box { position: relative; width: 100vw; height: 100vh; background: #1a1a1a; overflow: hidden; transition: background 1s; }
+        :root { --gold: #ffeb3b; --cyan: #00ffff; --win: #4caf50; --lose: #f44336; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: "微軟正黑體", sans-serif; touch-action: none; }
         
-        .ocean-mode { background: linear-gradient(to bottom, #001a33, #000) !important; }
-        #fog { position: absolute; inset: 0; pointer-events: none; z-index: 150; transition: 0.5s; background: radial-gradient(circle, transparent 20%, rgba(0,0,0,0.9) 80%); display: none; }
-        
-        #ui { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-around; color: white; font-size: 24px; z-index: 100; font-weight: bold; text-shadow: 2px 2px #000; }
-        #status-msg { position: absolute; top: 80px; width: 100%; text-align: center; color: #ffeb3b; font-size: 30px; font-weight: bold; z-index: 100; }
+        /* 啟動與排行榜界面 */
+        #boot-screen { position: absolute; inset: 0; z-index: 9999; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--gold); }
+        .leaderboard { background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px; margin: 15px 0; min-width: 320px; border: 2px solid var(--gold); box-shadow: 0 0 15px rgba(255,235,59,0.2); }
+        .lb-item { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 10px 0; font-size: 18px; }
+        .lb-name { color: white; flex: 1; text-align: left; }
+        .lb-score { color: var(--gold); font-weight: bold; }
 
-        .entity { position: absolute; display: flex; justify-content: center; align-items: center; user-select: none; }
-        #player { font-size: 70px; z-index: 50; transition: filter 0.2s; }
-        #shark { font-size: 160px; z-index: 40; filter: drop-shadow(0 0 20px red); transition: left 0.2s; }
-        #ground { position: absolute; bottom: 0; width: 100%; height: 90px; background: #222; border-top: 4px solid #444; z-index: 10; }
+        /* 遊戲舞台 */
+        #stage { position: relative; width: 100vw; height: 100vh; background: linear-gradient(to bottom, #1a2a6c, #b21f1f); display: none; transition: background 2s; }
+        #stage.night { background: linear-gradient(to bottom, #000428, #004e92); }
+        .cloud { position: absolute; color: white; opacity: 0.3; font-size: 60px; z-index: 3; pointer-events: none; }
+        
+        .track { position: relative; width: 100%; overflow: hidden; border-bottom: 2px solid rgba(255,255,255,0.2); z-index: 10; }
+        .road { position: absolute; bottom: 0; width: 100%; height: 50px; background: #222; border-top: 4px solid #444; z-index: 11; }
 
-        #menu { position: absolute; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 500; color: white; }
-        .char-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px; }
-        .char-item { padding: 15px; border: 2px solid #444; cursor: pointer; text-align: center; border-radius: 10px; transition: 0.3s; }
-        .selected { border-color: #ffeb3b; background: #333; transform: scale(1.1); }
-        
-        #skill-desc-box { padding: 15px; border: 1px solid #ffeb3b; width: 80%; text-align: center; color: #ccc; background: rgba(255,255,255,0.05); }
-        button#start-btn { margin-top: 25px; padding: 15px 50px; font-size: 22px; background: #ffeb3b; border: none; cursor: pointer; font-weight: bold; border-radius: 10px; }
-        
-        .invert { filter: invert(1) hue-rotate(180deg); }
+        /* 單人裝飾區 */
+        #decor-zone { position: relative; width: 100%; height: 25%; background: rgba(0,0,0,0.8); display: none; flex-direction: column; align-items: center; justify-content: center; border-top: 3px solid var(--gold); z-index: 20; }
+        .decor-title { color: var(--gold); font-size: 40px; font-weight: bold; letter-spacing: 12px; text-shadow: 0 0 15px orange; }
+
+        /* UI 與 訊息 */
+        #ui-layer { position: absolute; top: 10px; width: 100%; display: flex; justify-content: space-around; z-index: 1000; pointer-events: none; }
+        .badge { background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; border: 1px solid var(--gold); color: white; font-size: 14px; }
+        #msg-box { position: absolute; bottom: 85px; left: 10px; z-index: 1000; color: #fff; background: rgba(0,0,0,0.7); padding: 8px 12px; border-left: 4px solid var(--cyan); font-size: 13px; border-radius: 4px; }
+
+        /* 物體 */
+        .entity { position: absolute; display: flex; justify-content: center; align-items: center; user-select: none; pointer-events: none; }
+        .player { font-size: 60px; z-index: 100; bottom: 50px; left: 15%; transition: transform 0.1s; }
+        .shark { font-size: 120px; z-index: 50; bottom: 50px; filter: drop-shadow(0 0 25px red); }
+        .item { z-index: 80; font-size: 48px; bottom: 50px; }
+
+        /* 選單與結果 */
+        .overlay { position: absolute; inset: 0; z-index: 5000; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; color: white; }
+        .card { background: #1a1a1a; padding: 25px; border-radius: 25px; border: 2px solid var(--gold); text-align: center; width: 92%; max-width: 500px; }
+        .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin: 15px 0; }
+        .cell { font-size: 24px; padding: 10px; border: 1px solid #444; border-radius: 10px; cursor: pointer; background: #222; }
+        .cell.active { border-color: var(--gold); background: rgba(255,235,59,0.3); transform: scale(1.1); }
+        .btn-go { width: 100%; padding: 18px; background: var(--win); border: none; color: white; font-size: 26px; font-weight: bold; border-radius: 15px; cursor: pointer; }
+        input { width: 85%; padding: 15px; margin: 10px 0; background: #000; border: 1px solid var(--gold); color: white; border-radius: 10px; text-align: center; font-size: 18px; }
     </style>
 </head>
 <body>
 
-    <div id="game-box">
-        <div id="fog"></div>
-        <div id="ui">
-            <div id="hp-box">❤️❤️❤️</div>
-            <div>目前里程: <span id="dist">0</span> m</div>
-            <div id="star-ui" style="color: #ffeb3b;">⭐ 收集: <span id="star-count">0</span> / 30</div>
-        </div>
-        <div id="status-msg"></div>
+<div id="boot-screen">
+    <h1 style="font-size: 48px; margin:0; color:var(--lose); text-shadow: 0 0 15px black;">KILLER FISH 2</h1>
+    <div class="leaderboard">
+        <h4 style="margin:0 0 10px 0; color:var(--cyan); text-align:center;">🏆 全球里程排行 (Top 5)</h4>
+        <div id="lb-list">載入排名中...</div>
+    </div>
+    <button style="padding:15px 60px; font-size:28px; background:var(--gold); border:none; cursor:pointer; font-weight:bold; border-radius:50px;" onclick="initEngine()">開始遊戲</button>
+</div>
 
-        <div id="player" class="entity">🐢</div>
-        <div id="shark" class="entity">🦈</div>
-        <div id="ground"></div>
+<div id="stage">
+    <div id="ui-layer">
+        <div class="badge">P1: <span id="u-n1">---</span> ⭐ <span id="u-s1">0</span></div>
+        <div class="badge" id="u-p2-badge" style="display:none;">P2: <span id="u-n2">---</span> ⭐ <span id="u-s2">0</span></div>
+        <div class="badge">里程: <span id="u-dist">0</span>m</div>
+    </div>
+    <div id="msg-box">系統：準備出發！收集 50 星或挑戰極限里程！</div>
+    <div id="track-1" class="track"><div class="road"></div></div>
+    <div id="track-2" class="track" style="display:none;"><div class="road"></div></div>
+    <div id="decor-zone"><div class="decor-title">BIG WHITE KILLER</div></div>
 
-        <div id="menu">
-            <h1 style="color: #ffeb3b;">英雄無盡生存戰</h1>
-            <div class="char-grid">
-                <div class="char-item selected" onclick="selectChar('🐢','烏龜','縮殼防禦：蹲下時上方無敵', this)">🐢<br>烏龜</div>
-                <div class="char-item" onclick="selectChar('🐕','狗狗','磁力嗅覺：自動吸引星星', this)">🐕<br>狗狗</div>
-                <div class="char-item" onclick="selectChar('🐁','老鼠','極小體積：最難被撞到', this)">🐁<br>老鼠</div>
-                <div class="char-item" onclick="selectChar('🐇','兔子','三連跳躍：飛越一切障礙', this)">🐇<br>兔子</div>
-                <div class="char-item" onclick="selectChar('🦔','刺蝟','反擊尖刺：撞擊機率不扣血', this)">🦔<br>刺蝟</div>
-                <div class="char-item" onclick="selectChar('🦘','袋鼠','強力噴射：跳得比誰都高', this)">🦘<br>袋鼠</div>
+    <div id="menu" class="overlay" style="display:none;">
+        <div class="card">
+            <h2 style="color:var(--gold); margin:0;">選擇冒險模式</h2>
+            <div style="margin:15px 0;">
+                <button onclick="setMode(1)" id="m1-btn" style="padding:10px 25px; background:var(--gold); border:none; border-radius:8px;">單人記錄</button>
+                <button onclick="setMode(2)" id="m2-btn" style="padding:10px 25px; background:#444; color:white; border:none; border-radius:8px;">雙人遊玩</button>
             </div>
-            <div id="skill-desc-box">縮殼防禦：蹲下時上方無敵</div>
-            <button id="start-btn" onclick="startGame()">點擊開始 (含音效)</button>
+            <div id="p1-setup">
+                <input type="text" id="p1-name" placeholder="輸入玩家暱稱" maxlength="10">
+                <div id="p1-grid" class="grid"></div>
+                <p id="p1-skill" style="color:var(--cyan); font-size:14px; height:20px;"></p>
+            </div>
+            <div id="p2-area" style="display:none; border-top:1px solid #333; margin-top:10px; padding-top:10px;">
+                <input type="text" id="p2-name" placeholder="P2 暱稱" maxlength="10">
+                <div id="p2-grid" class="grid"></div>
+                <p id="p2-skill" style="color:var(--cyan); font-size:14px; height:20px;"></p>
+            </div>
+            <button class="btn-go" onclick="startPlay()">出發！</button>
         </div>
     </div>
 
+    <div id="result" class="overlay" style="display:none;">
+        <div class="card">
+            <h1 id="res-title">GAME OVER</h1>
+            <p id="res-detail"></p>
+            <button class="btn-go" onclick="location.reload()">回主選單</button>
+        </div>
+    </div>
+</div>
+
 <script>
-let audioCtx;
-const gameBox = document.getElementById('game-box');
-const playerEl = document.getElementById('player');
-const sharkEl = document.getElementById('shark');
-const statusMsg = document.getElementById('status-msg');
-const fog = document.getElementById('fog');
+// --- 1. Firebase 配置 (請在此填入你的資訊) ---
+const firebaseConfig = {
+    apiKey: "你的API_KEY",
+    authDomain: "你的ID.firebaseapp.com",
+    databaseURL: "https://你的ID-default-rtdb.firebaseio.com",
+    projectId: "你的ID",
+    storageBucket: "你的ID.appspot.com",
+    messagingSenderId: "你的ID",
+    appId: "你的ID"
+};
 
-let isPlaying = false, score = 0, stars = 0, hp = 3;
-let sharkX = -500, sharkGoal = -500;
-let player = { char: '🐢', y: 0, vy: 0, jumps: 0, crouch: false, reversed: false };
-let items = [];
+// 初始化 (如果沒填配置，會回退到本地模式)
+let database = null;
+try {
+    firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
+} catch(e) { console.log("Firebase 未配置，使用本地模式"); }
 
-// 音效系統
-function initAudio() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+// --- 2. 遊戲參數 ---
+const charData = [
+    {i:'🐢', n:'烏龜', s:'縮殼無視老鷹(右側點擊)'}, {i:'🐇', n:'兔子', s:'空中三段跳躍'},
+    {i:'🐕', n:'狗狗', s:'磁力吸取星星'}, {i:'🦔', n:'刺蝟', s:'50%機率反彈撞擊'},
+    {i:'🐁', n:'老鼠', s:'判定極小'}, {i:'🦘', n:'袋鼠', s:'強力彈跳'}
+];
+let game = { running: false, mode: 1, dist: 0, p1C: charData[0], p2C: charData[1], players: [], items: [], clouds: [] };
+let audio;
+
+// --- 3. 音效系統 ---
+const Sound = {
+    init() { if(!audio) audio = new (window.AudioContext || window.webkitAudioContext)(); },
+    play(f, d, t='sine', v=0.1) {
+        if(!audio) return;
+        let o = audio.createOscillator(), g = audio.createGain();
+        o.type = t; o.frequency.setValueAtTime(f, audio.currentTime);
+        g.gain.setValueAtTime(v, audio.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, audio.currentTime + d);
+        o.connect(g); g.connect(audio.destination);
+        o.start(); o.stop(audio.currentTime + d);
+    },
+    start() { [261, 329, 392, 523, 659].forEach((f, i) => setTimeout(() => this.play(f, 0.4, 'square'), i*150)); },
+    jump() { this.play(450, 0.2, 'triangle'); },
+    star() { this.play(1100, 0.1, 'sine', 0.2); },
+    hit() { this.play(95, 0.3, 'sawtooth', 0.25); },
+    bite() { this.play(55, 1.2, 'sawtooth', 0.5); this.play(35, 1.5, 'sawtooth', 0.5); },
+    win() { [523, 659, 783, 1046].forEach((f, i) => setTimeout(() => this.play(f, 0.6), i*100)); }
+};
+
+// --- 4. 排行榜邏輯 (全球/本地整合) ---
+function updateLeaderboard() {
+    if (database) {
+        database.ref('rankings').orderByChild('s').limitToLast(5).on('value', (snapshot) => {
+            let list = [];
+            snapshot.forEach(child => { list.push(child.val()); });
+            renderLBUI(list.reverse());
+        });
+    } else {
+        let list = JSON.parse(localStorage.getItem('fish_local_top5')) || [{n:'本地戰神', s:5000}];
+        renderLBUI(list.sort((a,b)=>b.s-a.s).slice(0,5));
+    }
 }
 
-function playSound(freq, type, duration, vol=0.1) {
-    if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + duration);
+function renderLBUI(list) {
+    let html = '';
+    list.forEach((item, i) => {
+        html += `<div class="lb-item"><span class="lb-name">${i+1}. ${item.n}</span><span class="lb-score">${item.s}m</span></div>`;
+    });
+    document.getElementById('lb-list').innerHTML = html || "暫無資料";
 }
+updateLeaderboard();
 
-function selectChar(c, name, desc, el) {
-    player.char = c; playerEl.innerText = c;
-    document.getElementById('skill-desc-box').innerText = desc;
-    document.querySelectorAll('.char-item').forEach(i => i.classList.remove('selected'));
-    el.classList.add('selected');
-    playerEl.style.fontSize = (c === '🐁') ? '45px' : '75px';
-}
-
-function startGame() {
-    initAudio();
-    audioCtx.resume();
-    document.getElementById('menu').style.display = 'none';
-    score = 0; stars = 0; hp = 3; sharkGoal = -500;
-    isPlaying = true;
-    player.y = window.innerHeight - 160;
-    items.forEach(i => i.el.remove()); items = [];
-    requestAnimationFrame(loop);
-    spawnManager();
-    maliceManager();
-    playSound(440, 'sine', 0.5); // 開始音
-}
-
-function spawnManager() {
-    if(!isPlaying) return;
-    let type = Math.random();
-    let x = window.innerWidth + 200;
+// --- 5. 遊戲核心 ---
+function initEngine() {
+    Sound.init(); Sound.start();
+    document.getElementById('boot-screen').style.display = 'none';
+    document.getElementById('stage').style.display = 'block';
+    document.getElementById('menu').style.display = 'flex';
+    renderGrid('p1-grid', (c) => { game.p1C = c; document.getElementById('p1-skill').innerText = c.n + "：" + c.s; });
+    renderGrid('p2-grid', (c) => { game.p2C = c; document.getElementById('p2-skill').innerText = c.n + "：" + c.s; });
     
-    if(type < 0.4) { // 星星群
-        for(let i=0; i<5; i++) createItem('⭐', 'star', x + (i*60), window.innerHeight - 300 - Math.random()*150);
-    } else if(type < 0.5) { // 惡意方塊
-        createItem('👾', 'glitch', x, window.innerHeight - 165);
-    } else { // 密集障礙物
-        let isHigh = Math.random() > 0.5;
-        let icon = isHigh ? '🦅' : '🌲';
-        if(score > 5000) icon = isHigh ? '🐙' : '⚓';
-        createItem(icon, isHigh?'high':'low', x, isHigh?window.innerHeight-280:window.innerHeight-165);
+    for(let i=0; i<8; i++) {
+        let c = document.createElement('div'); c.className = 'cloud'; c.innerText = '☁️';
+        document.getElementById('stage').appendChild(c);
+        game.clouds.push({ el: c, x: Math.random()*window.innerWidth, y: Math.random()*250, v: Math.random()*0.4 + 0.2 });
     }
-    setTimeout(spawnManager, 1200 - Math.min(score/50, 800));
 }
 
-function maliceManager() {
-    if(!isPlaying) return;
-    let r = Math.random();
-    if(r < 0.3) {
-        statusMsg.innerText = "🌫️ 濃霧來襲！";
-        fog.style.display = 'block';
-        playSound(150, 'sawtooth', 0.5, 0.05);
-        setTimeout(() => { fog.style.display = 'none'; statusMsg.innerText = ""; }, 5000);
-    } else if(r < 0.5) {
-        statusMsg.innerText = "🌈 視覺污染！";
-        gameBox.classList.add('invert');
-        setTimeout(() => { gameBox.classList.remove('invert'); statusMsg.innerText = ""; }, 4000);
-    }
-    setTimeout(maliceManager, 8000 + Math.random()*7000);
+function renderGrid(id, cb) {
+    const box = document.getElementById(id); box.innerHTML = '';
+    charData.forEach((c, i) => {
+        let d = document.createElement('div'); d.className = 'cell'; d.innerText = c.i;
+        d.onclick = () => {
+            box.querySelectorAll('.cell').forEach(el=>el.classList.remove('active'));
+            d.classList.add('active'); cb(c); Sound.play(600, 0.1);
+        };
+        if((id==='p1-grid'&&i===0) || (id==='p2-grid'&&i===1)) { d.classList.add('active'); cb(c); }
+        box.appendChild(d);
+    });
 }
 
-function createItem(txt, kind, x, y) {
-    let el = document.createElement('div');
-    el.className = 'entity'; el.innerText = txt;
-    el.style.fontSize = kind==='star'?'40px':'80px';
-    el.style.left = x + 'px'; el.style.top = y + 'px';
-    gameBox.appendChild(el);
-    items.push({ el, x, y, kind, hit: false });
+function setMode(m) {
+    game.mode = m;
+    document.getElementById('m1-btn').style.background = m===1 ? 'var(--gold)' : '#444';
+    document.getElementById('m2-btn').style.background = m===2 ? 'var(--gold)' : '#444';
+    document.getElementById('p2-area').style.display = m===2 ? 'block' : 'none';
 }
 
-function loop() {
-    if(!isPlaying) return;
-    score += 1; // 里程穩定跳動
-    document.getElementById('dist').innerText = Math.floor(score);
-    document.getElementById('star-count').innerText = stars;
+function startPlay() {
+    document.getElementById('menu').style.display = 'none';
+    const t1 = document.getElementById('track-1'), t2 = document.getElementById('track-2'), decor = document.getElementById('decor-zone');
+    if(game.mode === 1) { t1.style.height = '75%'; t2.style.display = 'none'; decor.style.display = 'flex'; }
+    else { t1.style.height = '50%'; t2.style.display = 'block'; t2.style.height = '50%'; decor.style.display = 'none'; document.getElementById('u-p2-badge').style.display = 'block'; }
 
-    if(score > 5000) gameBox.classList.add('ocean-mode');
+    game.players = [createP(1, game.p1C, document.getElementById('p1-name').value || "冒險者1")];
+    if(game.mode===2) game.players.push(createP(2, game.p2C, document.getElementById('p2-name').value || "冒險者2"));
+    
+    game.running = true; game.dist = 0;
+    requestAnimationFrame(mainLoop);
+    spawn();
+}
 
-    // 物理與特技
-    let floor = window.innerHeight - 160;
-    if(!player.crouch) { player.vy += 2.2; player.y += player.vy; }
-    if(player.y >= floor) { player.y = floor; player.vy = 0; player.jumps = 0; }
-    playerEl.style.top = player.y + 'px'; playerEl.style.left = '250px';
+function createP(id, char, nick) {
+    const t = document.getElementById(`track-${id}`); t.innerHTML = '<div class="road"></div>';
+    const pEl = document.createElement('div'); pEl.className = 'entity player'; pEl.innerText = char.i;
+    const sEl = document.createElement('div'); sEl.className = 'entity shark'; sEl.innerText = '🦈';
+    t.appendChild(pEl); t.appendChild(sEl);
+    document.getElementById(`u-n${id}`).innerText = nick;
+    return { id, nick, char, pEl, sEl, y:0, vy:0, j:0, cr:false, sx:-600, stars:0 };
+}
 
-    // 鯊魚邏輯
-    sharkGoal -= 0.5; if(sharkGoal < -500) sharkGoal = -500;
-    sharkX += (sharkGoal - sharkX) * 0.1;
-    sharkEl.style.left = sharkX + 'px'; sharkEl.style.top = window.innerHeight - 400 + 'px';
+function spawn() {
+    if(!game.running) return;
+    const type = Math.random() < 0.25 ? 'star' : (Math.random() < 0.65 ? 'tree' : 'eagle');
+    game.players.forEach(p => {
+        let el = document.createElement('div'); el.className = 'entity item';
+        el.innerText = type==='star' ? '⭐' : (type==='eagle' ? '🦅' : '🌲');
+        el.style.left = window.innerWidth + 80 + 'px';
+        el.style.bottom = (type==='eagle' ? 180 : 50) + 'px';
+        document.getElementById(`track-${p.id}`).appendChild(el);
+        game.items.push({ el, x: window.innerWidth + 80, type, pId: p.id, hit: false });
+    });
+    let interval = 1200 - (game.players[0].stars * 20);
+    setTimeout(spawn, Math.max(interval, 400));
+}
 
-    for(let i=items.length-1; i>=0; i--) {
-        let it = items[i];
-        it.x -= (16 + score/1000);
+function mainLoop() {
+    if(!game.running) return;
+    game.dist += (1 + game.players[0].stars * 0.06);
+    document.getElementById('u-dist').innerText = Math.floor(game.dist);
+
+    game.clouds.forEach(c => {
+        c.x -= c.v; if(c.x < -120) c.x = window.innerWidth + 120;
+        c.el.style.left = c.x + 'px'; c.el.style.top = c.y + 'px';
+    });
+
+    game.players.forEach(p => {
+        p.vy += 1.7; p.y -= p.vy;
+        if(p.y < 0) { p.y = 0; p.vy = 0; p.j = 0; }
+        p.pEl.style.bottom = (50 + p.y) + 'px';
+        if(p.stars >= 25) document.getElementById('stage').classList.add('night');
         
-        // 🐕 狗狗吸星
-        if(player.char === '🐕' && it.kind === 'star') {
-            let dx = 250 - it.x, dy = player.y - it.y;
-            if(Math.abs(dx) < 350) { it.x += dx * 0.1; it.y += dy * 0.1; it.el.style.top = it.y + 'px'; }
+        if(p.char.i==='🐕') {
+            game.items.filter(it=>it.type==='star'&&it.pId===p.id).forEach(it=>{
+                if(Math.abs(it.x - window.innerWidth*0.15) < 300) it.x -= 15;
+            });
         }
+        
+        p.sx -= (0.14 + p.stars * 0.006);
+        p.sEl.style.left = p.sx + 'px';
+        if(p.sx + 100 > window.innerWidth*0.15) doEnd(`${p.nick} 被咬碎了！`, false);
+        document.getElementById(`u-s${p.id}`).innerText = p.stars;
+        if(p.stars >= 50) doEnd(`🏆 ${p.nick} 收集 50 星奇蹟！`, true);
+    });
 
-        it.el.style.left = it.x + 'px';
-        let radius = (player.char === '🐁') ? 45 : 70;
-
-        if(Math.abs(250 - it.x) < radius && Math.abs(player.y - it.y) < radius && !it.hit) {
-            if(it.kind === 'star') {
-                stars++; it.el.remove(); items.splice(i, 1);
-                playSound(1200, 'sine', 0.1, 0.1);
-                if(stars >= 30) { statusMsg.innerText = "✨ 門戶已開啟！衝過萬米過關！"; }
-            } else if(it.kind === 'glitch') {
-                player.reversed = true; it.el.remove(); items.splice(i, 1);
-                statusMsg.innerText = "🌀 操作混亂！";
-                playSound(200, 'square', 0.5, 0.2);
-                setTimeout(() => { player.reversed = false; statusMsg.innerText = ""; }, 5000);
-            } else {
-                let hit = (it.kind==='high' && !player.crouch) || (it.kind==='low' && player.y > floor - 30);
-                if(player.char === '🐢' && player.crouch && it.kind === 'high') hit = false;
-                
+    const currentSpeed = 12 + (game.players[0].stars * 0.45);
+    for(let i=game.items.length-1; i>=0; i--) {
+        let it = game.items[i]; it.x -= currentSpeed; it.el.style.left = it.x + 'px';
+        const p = game.players.find(x => x.id === it.pId);
+        if(p && Math.abs(it.x - window.innerWidth*0.15) < 55 && !it.hit) {
+            if(it.type === 'star') { p.stars++; it.hit = true; it.el.remove(); Sound.star(); }
+            else {
+                let hit = (it.type==='tree' && p.y < 45) || (it.type==='eagle' && !p.cr);
+                if(p.char.i==='🐢'&&p.cr&&it.type==='eagle') hit = false;
                 if(hit) {
-                    if(player.char === '🦔' && Math.random() < 0.3) {
-                        it.el.remove(); items.splice(i, 1); continue;
-                    }
-                    it.hit = true; hp--;
-                    document.getElementById('hp-box').innerText = "❤️".repeat(hp);
-                    sharkGoal += 300;
-                    playSound(80, 'sawtooth', 0.4, 0.3);
-                    if(hp <= 0) endGame("你被鯊魚抓住了！");
+                    it.hit = true;
+                    if(p.char.i==='🦔'&&Math.random()>0.5) msg(`[技能] ${p.nick} 反彈！`);
+                    else { p.sx += 220; Sound.hit(); msg(`[碰撞] ${p.nick} 減速！`); }
                 }
             }
         }
-        if(it.x < -100) { it.el.remove(); items.splice(i, 1); }
+        if(it.x < -120) { it.el.remove(); game.items.splice(i,1); }
     }
-
-    if(sharkX + 320 > 250) endGame("鯊魚咬到了你！");
-    if(stars >= 30 && score > 10000) endGame("🏆 逃出生天！過關！", true);
-    if(isPlaying) requestAnimationFrame(loop);
+    requestAnimationFrame(mainLoop);
 }
 
-function endGame(m, win=false) {
-    isPlaying = false;
-    alert(m + "\n星星總數: " + stars + "\n里程: " + Math.floor(score));
-    location.reload();
-}
+function msg(m) { document.getElementById('msg-box').innerText = m; }
 
-window.onkeydown = (e) => {
-    let key = e.code;
-    if(player.reversed) {
-        if(key === 'Space') key = 'ArrowDown';
-        else if(key === 'ArrowDown') key = 'Space';
-    }
-
-    if(key === 'Space') {
-        let max = (player.char === '🐇') ? 3 : 1;
-        if(player.jumps < max) {
-            player.vy = (player.char === '🦘') ? -42 : -36;
-            player.jumps++;
-            playSound(300 + player.jumps * 100, 'triangle', 0.15);
+function doEnd(t, isWin) {
+    game.running = false;
+    if(isWin) Sound.win(); else Sound.bite();
+    
+    // 上傳單人紀錄
+    if(game.mode === 1) {
+        const finalScore = Math.floor(game.dist);
+        const name = game.players[0].nick;
+        if (database) {
+            database.ref('rankings').push({ n: name, s: finalScore });
+        } else {
+            let list = JSON.parse(localStorage.getItem('fish_local_top5')) || [];
+            list.push({ n: name, s: finalScore });
+            localStorage.setItem('fish_local_top5', JSON.stringify(list));
         }
     }
-    if(key === 'ArrowDown') {
-        player.crouch = true;
-        playerEl.style.transform = 'scaleY(0.4) translateY(60px)';
-    }
+
+    document.getElementById('result').style.display = 'flex';
+    document.getElementById('res-title').innerText = isWin ? "VICTORY" : "GAME OVER";
+    document.getElementById('res-detail').innerText = `${t}\n最終里程：${Math.floor(game.dist)}m\n星星：${game.players[0].stars}`;
+}
+
+// 控制
+window.ontouchstart = (e) => {
+    if(!game.running) return;
+    [...e.touches].forEach(t => {
+        let pIdx = (game.mode === 1) ? 0 : (t.clientY < window.innerHeight/2 ? 0 : 1);
+        let p = game.players[pIdx];
+        if(!p) return;
+        if(t.clientX > window.innerWidth/2) { p.cr = true; p.pEl.style.transform = 'scaleY(0.6)'; }
+        else { let mJ = p.char.i==='🐇'? 3:1; if(p.j < mJ) { p.vy = p.char.i==='🦘'?-40:-32; p.j++; Sound.jump(); } }
+    });
+};
+window.ontouchend = () => { game.players.forEach(p=>{p.cr=false; p.pEl.style.transform='scaleY(1)';}); };
+window.onkeydown = (e) => {
+    if(e.code==='Space'||e.code==='ArrowUp') jump(0);
+    if(e.code==='ArrowDown' && game.players[0]) { game.players[0].cr=true; game.players[0].pEl.style.transform='scaleY(0.6)'; }
+    if(game.mode===2) { if(e.code==='KeyW') jump(1); if(e.code==='KeyS' && game.players[1]) { game.players[1].cr=true; game.players[1].pEl.style.transform='scaleY(0.6)'; } }
 };
 window.onkeyup = (e) => {
-    if(e.code === 'ArrowDown' || (player.reversed && e.code === 'Space')) {
-        player.crouch = false;
-        playerEl.style.transform = 'scaleY(1) translateY(0px)';
-    }
+    if(e.code==='ArrowDown' && game.players[0]) { game.players[0].cr=false; game.players[0].pEl.style.transform='scaleY(1)'; }
+    if(game.mode===2 && e.code==='KeyS' && game.players[1]) { game.players[1].cr=false; game.players[1].pEl.style.transform='scaleY(1)'; }
 };
+function jump(i) { let p=game.players[i]; if(p && p.j<(p.char.i==='🐇'?3:1)) { p.vy=p.char.i==='🦘'?-40:-32; p.j++; Sound.jump(); } }
 </script>
 </body>
 </html>
